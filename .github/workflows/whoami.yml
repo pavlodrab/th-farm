@@ -1,0 +1,7 @@
+name: whoami
+on: { workflow_dispatch: {} }
+jobs:
+  ip:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -s https://ipinfo.io/json
