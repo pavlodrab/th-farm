@@ -1,0 +1,55 @@
+name: th-farm
+
+# Один запуск = N параллельных раннеров, каждый регает 1 аккаунт на своём
+# свежем Azure-IP. Результат каждого — отдельный артефакт key-<i>.
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Сколько аккаунтов (раннеров) запустить"
+        required: true
+        default: "5"
+      max_parallel:
+        description: "Сколько раннеров одновременно (лимит бесплатного плана ~20)"
+        required: false
+        default: "10"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - id: gen
+        run: |
+          N=${{ github.event.inputs.count }}
+          echo "matrix=$(python3 -c "import json,sys; n=int(sys.argv[1]); print(json.dumps({'i': list(range(1, n+1))}))" "$N")" >> "$GITHUB_OUTPUT"
+
+  farm:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(github.event.inputs.max_parallel) }}
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install requests
+      - name: Register one account
+        env:
+          MAIL_BASE: ${{ secrets.MAIL_BASE }}
+          MAIL_ADMIN_KEY: ${{ secrets.MAIL_ADMIN_KEY }}
+          MAIL_DOMAIN: ${{ secrets.MAIL_DOMAIN }}
+        run: python th_runner.py
+      - name: Upload key
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: key-${{ matrix.i }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 1
